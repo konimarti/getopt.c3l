@@ -2,8 +2,14 @@
 module posix::getopt;
 import std::collections::list;
 
+struct Flag {
+	char    shortopt;
+	String 	longopt;  // short or long option name, e.g. 'v' or 'verbose'
+	bool 	optarg;	  // flag has an optional argument
+}
+
 struct Option {
-	char flag;
+	inline Flag flag;
 	String arg;
 }
 
@@ -16,7 +22,7 @@ fault Error {
  Parses command-line arguments..
  
  @param [in] args "Strings of options."
- @param [in] optstring "Specification of options."
+ @param [in] flags "Specification of options."
  @param [out] optind "Index of the first non-option argument"
 
  @require args.len > 0
@@ -24,12 +30,12 @@ fault Error {
  @return! Error.UNKNOWN_OPTION, Error.MISSING_ARGUMENT
 
 *>
-fn Option[]! getopts(String[] args, String optstring, int *optind, Allocator allocator)
+fn Option[]! parse(String[] args, Flag[] flags, int *optind, Allocator allocator)
 {
 	int i;
 
 	List(<Option>) opts;
-	opts.temp_init(optstring.len);
+	opts.temp_init(flags.len);
 
 	// remove program name
 	args = args[1..];
@@ -52,25 +58,60 @@ fn Option[]! getopts(String[] args, String optstring, int *optind, Allocator all
 		}
 
 		arg = arg[1..];
-		foreach (c : arg) {
-			usz! pos = optstring.index_of_char(c);
-			if (catch pos) {
-				return Error.UNKNOWN_OPTION?;
+		if (arg.len > 0 && arg[0] == '-')
+		{
+			// parse long flag options
+			arg = arg[1..];
+			Flag flag;
+			foreach (f : flags)
+			{
+				if (f.longopt == arg)
+				{
+					flag = f;
+					break;
+				}
 			}
-
-			bool hasArgument = pos+1 < optstring.len && optstring[pos+1] == ':';
-			if (hasArgument) {
+			if (flag.longopt.len == 0) return Error.UNKNOWN_OPTION?;
+			if (flag.optarg) {
 				if (args.len >= 2) {
 					args = args[1..];
 					i++;
-					opts.push({.flag=c, .arg=args[0]});
+					opts.push({.flag=flag, .arg=args[0]});
 				} else {
 					return Error.MISSING_ARGUMENT?;
 				}
 			} else {
-				opts.push({.flag=c, .arg=""});
+				opts.push({.flag=flag});
 			}
 		}
+		else
+		{
+			// parse single flag options
+			foreach (c : arg) {
+				Flag flag;
+				foreach (f : flags)
+				{
+					if (f.shortopt == c)
+					{
+						flag = f;
+						break;
+					}
+				}
+				if (flag.shortopt == 0) return Error.UNKNOWN_OPTION?;
+				if (flag.optarg) {
+					if (args.len >= 2) {
+						args = args[1..];
+						i++;
+						opts.push({.flag=flag, .arg=args[0]});
+					} else {
+						return Error.MISSING_ARGUMENT?;
+					}
+				} else {
+					opts.push({.flag=flag});
+				}
+			}
+		}
+
 		args = args[1..];
 		i++;
 	}
@@ -82,15 +123,45 @@ fn Option[]! getopts(String[] args, String optstring, int *optind, Allocator all
 	return opts.to_new_array(allocator);
 }
 
-fn Option[]! new_getopts(String[] args, String optstring, int *optind = null)
+fn Option[]! parse_new(String[] args, Flag[] flags, int *optind = null) @inline
 {
-	return getopts(args, optstring, optind, allocator::heap());
+return parse(args, flags, optind, allocator::heap());
 }
 
-fn Option[]! temp_getopts(String[] args, String optstring, int *optind = null)
+fn Option[]! parse_temp(String[] args, Flag[] flags, int *optind = null) @inline
 {
-	return getopts(args, optstring, optind, allocator::temp());
+	return parse(args, flags, optind, allocator::temp());
 }
 
+fn Option[]! getopts(String[] args, String optstr, int *optind = null, Allocator allocator)
+{
+	@pool()
+	{
+		Flag[] flags = mem::temp_alloc_array(Flag, optstr.len);
+		int i = 0;
+		foreach (c : optstr)
+		{
+			if (c == ':')
+			{
+				flags[i].optarg = true;
+			}
+			else
+			{
+				flags[i].shortopt = c;
+				i++;
+			}
+		}
+		return parse(args, flags, optind, allocator);
+	};
+}
 
+fn Option[]! getopts_new(String[] args, String optstr, int *optind = null) @inline
+{
+	return getopts(args, optstr, optind, allocator::heap());
+}
+
+fn Option[]! getopts_temp(String[] args, String optstr, int *optind = null) @inline
+{
+	return getopts(args, optstr, optind, allocator::temp());
+}
 

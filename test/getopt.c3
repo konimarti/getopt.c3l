@@ -4,14 +4,14 @@ import posix::getopt;
 
 struct TestCase {
 	String cmdline;
-	String optstring;
+	Flag[] flags;
 	Option[] want;
 }
 
 TestCase[] tests = {
 	{
 		.cmdline = "cmd -a",
-		.optstring = "a",
+		.flags = {{.shortopt = 'a'}},
 		.want = {
 			{
 				.flag = 'a',
@@ -22,6 +22,7 @@ TestCase[] tests = {
 	{
 		.cmdline = "cmd -a",
 		.optstring = "ab:",
+		.flags = {}{.shortopt = 'a'},
 		.want = {
 			{
 				.flag = 'a',
